@@ -5,7 +5,8 @@ const wss = new ws_1.WebSocketServer({ port: 8081 });
 let fishes = Array.from({ length: 10 }, (_, id) => ({
     id,
     x: Math.random() * -200, // Start off-screen
-    y: Math.random() * 600,
+    baseY: Math.random() * 600, // Initialize base Y
+    y: 0, // Will be calculated dynamically
     speed: Math.random() * 50 + 50, // Random speed
 }));
 let stateChanged = false; // Track whether the state has changed
@@ -14,19 +15,22 @@ function generateFish() {
     fishes = Array.from({ length: 10 }, (_, id) => ({
         id,
         x: Math.random() * -200, // Start off-screen
-        y: Math.random() * 600,
+        baseY: Math.random() * 600, // Initialize base Y
+        y: 0, // Will be calculated dynamically
         speed: Math.random() * 50 + 50, // Random speed
     }));
     stateChanged = true;
 }
 // Function to update fish positions
 function updateFishPositions() {
+    const time = Date.now(); // Consistent timestamp for sine wave calculation
     fishes = fishes.map((fish) => {
         const oldX = fish.x;
-        fish.x += fish.speed * 0.016; // Assuming 60 FPS (16ms per frame)
+        fish.x += fish.speed * 0.016; // Forward movement (60 FPS approximation)
+        fish.y = fish.baseY + Math.sin((time + fish.x * 50) / 3000) * 10; // Smooth sine wave
         if (fish.x > 800) {
             fish.x = -100; // Reset position
-            fish.y = Math.random() * 600; // Randomize vertical position
+            fish.baseY = Math.random() * 600; // Randomize vertical base position
         }
         if (fish.x !== oldX)
             stateChanged = true; // Mark state as changed
@@ -80,5 +84,5 @@ wss.on('connection', (ws) => {
 setInterval(() => {
     updateFishPositions();
     broadcastFishState();
-}, 200);
+}, 100);
 console.log('WebSocket server is running on ws://localhost:8081');
