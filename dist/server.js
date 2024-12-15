@@ -84,5 +84,5 @@ wss.on('connection', (ws) => {
 setInterval(() => {
     updateFishPositions();
     broadcastFishState();
-}, 100);
+}, 50);
 console.log('WebSocket server is running on ws://localhost:8081');
