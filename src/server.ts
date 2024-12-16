@@ -86,6 +86,27 @@ wss.on('connection', (ws: WebSocket) => {
             console.log('Received resetFish message. Regenerating fish...');
             generateFish();
             broadcastFishState();
+        }else if (message.type === 'updateFishPosition') {
+              // Find the index of the fish in the array
+            const fishIndex = fishes.findIndex((f) => f.id === message.id);
+
+            if (fishIndex !== -1) {
+                // Update the fish position and baseY in the array
+                fishes[fishIndex] = {
+                    ...fishes[fishIndex], // Spread operator to copy existing fish properties
+                    x: message.x,
+                    y: message.y,
+                    baseY: message.y, // Update baseY to reflect the new Y position
+                };
+
+                console.log(`Fish ID: ${message.id} moved to (${fishes[fishIndex].x}, ${fishes[fishIndex].y}). BaseY updated.`);
+
+                // Broadcast the updated fish state
+                stateChanged = true;
+                broadcastFishState();
+            } else {
+                console.error(`Fish ID: ${message.id} not found in the array.`);
+            }
         }
     });
 

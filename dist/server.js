@@ -75,6 +75,21 @@ wss.on('connection', (ws) => {
             generateFish();
             broadcastFishState();
         }
+        else if (message.type === 'updateFishPosition') {
+            // Find the index of the fish in the array
+            const fishIndex = fishes.findIndex((f) => f.id === message.id);
+            if (fishIndex !== -1) {
+                // Update the fish position and baseY in the array
+                fishes[fishIndex] = Object.assign(Object.assign({}, fishes[fishIndex]), { x: message.x, y: message.y, baseY: message.y });
+                console.log(`Fish ID: ${message.id} moved to (${fishes[fishIndex].x}, ${fishes[fishIndex].y}). BaseY updated.`);
+                // Broadcast the updated fish state
+                stateChanged = true;
+                broadcastFishState();
+            }
+            else {
+                console.error(`Fish ID: ${message.id} not found in the array.`);
+            }
+        }
     });
     ws.on('close', () => {
         console.log('Client disconnected');
