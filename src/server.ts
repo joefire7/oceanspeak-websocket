@@ -1,16 +1,23 @@
-import { WebSocketServer, WebSocket, RawData } from 'ws';
+import { WebSocketServer, WebSocket } from "ws";
 
-const wss = new WebSocketServer({ port: 8081 });
+const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 8081;
+const wss = new WebSocketServer({ port });
+
+const startTime = Date.now();
+let stateChanged = false; // Track if any state has changed
+
 
 let fishes = Array.from({ length: 10 }, (_, id) => ({
     id,
     x: Math.random() * -200, // Start off-screen
     baseY: Math.random() * 600, // Initialize base Y
     y: 0, // Will be calculated dynamically
+    targetX: null as number | null,
+    targetY: null as number | null,
+    lerpStartTime: null as number | null,
+    lerpDuration: 2000, // Default lerp duration in ms
     speed: Math.random() * 50 + 50, // Random speed
 }));
-
-let stateChanged = false; // Track whether the state has changed
 
 // Function to generate new fish data
 function generateFish() {
@@ -20,41 +27,51 @@ function generateFish() {
         baseY: Math.random() * 600, // Initialize base Y
         y: 0, // Will be calculated dynamically
         speed: Math.random() * 50 + 50, // Random speed
+        targetX: null, // Initially no target
+        targetY: null, // Initially no target
+        lerpStartTime: null, // No lerp started yet
+        lerpDuration: 1000, // Default lerp duration
     }));
     stateChanged = true;
 }
 
+// Linear interpolation function
+function linearInterpolation(start: number, end: number, t: number): number {
+    return start + t * (end - start);
+}
+
 // Function to update fish positions
 function updateFishPositions() {
-    const time = Date.now(); // Consistent timestamp for sine wave calculation
+    const time = Date.now();
 
     fishes = fishes.map((fish) => {
         const oldX = fish.x;
-        fish.x += fish.speed * 0.016; // Forward movement (60 FPS approximation)
-        fish.y = fish.baseY + Math.sin((time + fish.x * 50) / 3000) * 10; // Smooth sine wave
+
+        fish.x += fish.speed * 0.016; // Move forward
+        fish.y = fish.baseY + Math.sin((time + fish.x * 50) / 3000) * 10; // Update sinewave
 
         if (fish.x > 800) {
             fish.x = -100; // Reset position
-            fish.baseY = Math.random() * 600; // Randomize vertical base position
+            fish.baseY = Math.random() * 600; // Randomize baseY
         }
 
-        if (fish.x !== oldX) stateChanged = true; // Mark state as changed
+        if (fish.x !== oldX) stateChanged = true;
+
         return fish;
     });
 }
 
+// if (!stateChanged) return; // Skip broadcasting if nothing changed
+// stateChanged = false; // Reset stateChanged for the next cycle
 
-// Function to broadcast the current state of all fishes
 function broadcastFishState() {
-    if (!stateChanged) return; // Skip broadcasting if nothing changed
-    stateChanged = false;
-
     const data = JSON.stringify({
         type: 'update',
+        timestamp: Date.now(), // Add a timestamp
         fishes: fishes.map((fish) => ({
             id: fish.id,
-            x: fish.x,
-            y: fish.y,
+            x: Math.round(fish.x * 100) / 100,
+            y: Math.round(fish.y * 100) / 100,
         })),
     });
 
@@ -65,14 +82,22 @@ function broadcastFishState() {
     });
 }
 
-wss.on('connection', (ws: WebSocket) => {
-    console.log('Client connected');
 
-    // Send initial fish data to the new client
-    ws.send(JSON.stringify({ type: 'initial', fishes }));
 
-    ws.on('message', (data) => {
-        const message = JSON.parse((data as RawData).toString());
+wss.on("connection", (ws: WebSocket) => {
+    console.log("Client connected");
+
+    ws.send(
+        JSON.stringify({
+            type: "initial",
+            fishes,
+            startTime,
+            serverTimestamp: Date.now(),
+        })
+    );
+
+    ws.on("message", (data) => {
+        const message = JSON.parse(data.toString());
 
         if (message.type === 'fishDestroyed') {
             // Remove the fish from the list
@@ -86,39 +111,34 @@ wss.on('connection', (ws: WebSocket) => {
             console.log('Received resetFish message. Regenerating fish...');
             generateFish();
             broadcastFishState();
-        }else if (message.type === 'updateFishPosition') {
-              // Find the index of the fish in the array
+        }else if (message.type === "moveFish") {
             const fishIndex = fishes.findIndex((f) => f.id === message.id);
 
             if (fishIndex !== -1) {
-                // Update the fish position and baseY in the array
-                fishes[fishIndex] = {
-                    ...fishes[fishIndex], // Spread operator to copy existing fish properties
-                    x: message.x,
-                    y: message.y,
-                    baseY: message.y, // Update baseY to reflect the new Y position
-                };
-
-                console.log(`Fish ID: ${message.id} moved to (${fishes[fishIndex].x}, ${fishes[fishIndex].y}). BaseY updated.`);
-
-                // Broadcast the updated fish state
+                // Update the fish's position and sinewave baseY
+                fishes[fishIndex].x = message.targetX;
+                fishes[fishIndex].y = message.targetY;
+                fishes[fishIndex].baseY = message.targetY; // Update baseY to the new Y position
                 stateChanged = true;
-                broadcastFishState();
             } else {
-                console.error(`Fish ID: ${message.id} not found in the array.`);
+                console.error(`Fish ID ${message.id} not found`);
             }
         }
+
+        
     });
 
-    ws.on('close', () => {
-        console.log('Client disconnected');
+    ws.on("close", () => {
+        console.log("Client disconnected");
     });
 });
 
-// Update fish positions and broadcast every 200ms
+// Update fish positions and broadcast every 50ms
+// Server-side setInterval for position updates
 setInterval(() => {
     updateFishPositions();
     broadcastFishState();
 }, 50);
 
-console.log('WebSocket server is running on ws://localhost:8081');
+
+console.log(`WebSocket server is running on ws://localhost:${port}`);
